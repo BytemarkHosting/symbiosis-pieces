@@ -58,10 +58,15 @@ if [ -z $database ]; then
 
   for database_filename in /var/backups/mysql/*.sql.gz; do
     database="$(basename $database_filename .sql.gz)"
-    echo "Restoring.. $database"
-    mysqladmin --user=$mysql_user --password=$password create $database 2>/dev/null || true # this complains if databases exist, but we want them to -> not an error. Could stand to check for *other* errors
-    zcat $database_filename | mysql --user=$mysql_user --password=$password $database || true
+    if [ database = "information_schema" ]; then
+      break
+    else
+      echo "Restoring.. $database"
+      mysqladmin --user=$mysql_user --password=$password create $database 2>/dev/null || true # this complains if databases exist, but we want them to -> not an error. Could stand to check for *other* errors
+      zcat $database_filename | mysql --user=$mysql_user --password=$password $database || true
+    fi
   done
+  mysqladmin --user=$mysql_user --password=$password flush-privileges
 else
   if [ -f /var/backups/mysql/$database.sql.gz ]; then
     database_filename="$database.sql.gz"
