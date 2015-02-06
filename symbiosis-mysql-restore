@@ -1,0 +1,79 @@
+#!/bin/bash
+
+set -e
+
+database=""
+mysql_user=""
+
+function help {
+  cat << EOF
+help: $0 options -dp
+
+This script restores databases backed by backup2l from /var/backups/mysql
+It is intended for use with Bytemark's Symbiosis system.
+
+OPTIONS:
+   -h    Show this message
+   -d    Specify a database - if none is specified, all will be restored.
+   -u    Database user to use.
+
+You will be prompted for a password upon running this script. It must be
+the MySQL user's password.
+EOF
+}
+
+function response {
+  while read response; do
+    if [[ $response = [Yy] ]]; then
+      echo "OK! Continuing.."
+      break
+    elif [[ $response = [Nn] ]]; then
+      echo "OK, exiting."
+      exit 1
+    else
+      echo "Please enter 'y' for yes, or 'n' for no!";
+      response
+    fi
+  done
+}
+
+
+while getopts "hu:d::" opts; do
+  case $opts in
+    h) help >&2 ; exit 1 ;;
+    u) mysql_user="$OPTARG" >&2 ;;
+    d) database="$OPTARG" >&2 ;;
+    : ) echo "No arguments given, please specify -u [mysql user] and -d [database name]" >&2 ;exit 1;; 
+  esac
+done
+
+if [ -z $mysql_user ]; then echo "No user specified - supply one with '-u' or use '$0 -h' for help ."; exit; fi
+
+read -es -p "Password:" password; echo
+
+if [ -z $database ]; then
+  echo -n "No database specified, this will restore all databases - continue? (y/n) "
+  response
+  echo "Restoring all databases under /var/backups/mysql/.."
+
+  for database_filename in /var/backups/mysql/*.sql.gz; do
+    database="$(basename $database_filename .sql.gz)"
+    echo "Restoring.. $database"
+    mysqladmin --user=$mysql_user --password=$password create $database 2>/dev/null || true # this complains if databases exist, but we want them to -> not an error. Could stand to check for *other* errors
+    zcat $database_filename | mysql --user=$mysql_user --password=$password $database || true
+  done
+else
+  if [ -f /var/backups/mysql/$database.sql.gz ]; then
+    database_filename="$database.sql.gz"
+    echo -n "OK - $database will be restored - continue? (y/n) "
+    response
+    echo "Restoring $database..."
+    mysqladmin --user=$mysql_user --password=$password create $database 2>/dev/null || true # this complains if databases exist, but we want them to -> not an error. Could stand to check for *other* errors
+    zcat /var/backups/mysql/$database.sql.gz | mysql --user=$mysql_user --password=$password $database || true
+  else
+    echo "/var/backups/mysql/$database.sql.gz does not exist. This is case sensitive, so please try again!"
+    exit 1
+  fi
+fi
+
+echo "Finished."
